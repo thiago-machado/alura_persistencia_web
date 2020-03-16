@@ -4,7 +4,25 @@
     package="br.com.alura.estoque"
     tools:ignore="GoogleAppIndexingWarning">
 
+    <!--
+    Dependendo da API utilizada no Android, são necessárias permissões de sistemas,
+    como é o caso do acesso à rede, de mapas (GPS), câmeras, entre outros.
+    Para que esta execução de rede seja permitida, precisamos incluir as duas tags abaixo.
+    Neste caso, queremos uma permissão para acesso à internet, ou rede, e uma para o estado dela.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!--
+     android:usesCleartextTraffic="true" = a própria equipe do Android, a partir da versão 9,
+     da API 28, decidiu não permitir que o padrão seja feito em requisições HTTP, somente HTTPS.
+     A configuração inserida aqui no Manifest permite requisições HTTP (CLEARTEXT).
+
+     IMPORTANTE: Não é recomendado fazê-lo justamente pelo risco que corremos pelo usuário!
+     Mas por se tratar de teste, não tem problema.
+    -->
     <application
+        android:usesCleartextTraffic="true"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
