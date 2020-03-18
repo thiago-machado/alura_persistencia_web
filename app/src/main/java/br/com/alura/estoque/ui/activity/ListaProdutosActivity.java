@@ -1,5 +1,6 @@
 package br.com.alura.estoque.ui.activity;
 
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.widget.Toast;
 
@@ -46,6 +47,31 @@ public class ListaProdutosActivity extends AppCompatActivity {
     }
 
     private void buscaProdutos() {
+        buscaProdutosInternos();
+    }
+
+    private void buscaProdutosInternos() {
+
+        /*
+        Criando AsyncTask para pegar os produtos salvos internamente.
+
+        Por mais que tenhamos várias Async Tasks, elas não estão executando em paralelo.
+        Isso quer dizer que, quando executamos várias Async Tasks, elas formam uma fila de
+        execução em uma Thread separada, em background, e cada uma delas entrará em uma fila.
+
+        Aqui, na nossa situação, nós criamos uma AsyncTask que primeiro faz uma busca interna e
+        atualiza a visualização para o usuário.
+        Em seguida, realizamos uma busca externa para pegar as informações e atualizá-las.
+         */
+        new BaseAsyncTask<>(dao::buscaTodos, // Fazendo a busca internamente e retornando todos os produtos
+                resultado -> {
+                    // Atualizando a lista de produtos (que foram pegos internamente logo acima) para visuzalização
+                    adapter.atualiza(resultado);
+                    buscaProdutosNaAPI();
+        }).execute();
+    }
+
+    private void buscaProdutosNaAPI() {
 
         /*
         A implementação será feita com a instância de EstoqueRetrofit(), como
@@ -72,45 +98,61 @@ public class ListaProdutosActivity extends AppCompatActivity {
         Call<List<Produto>> call = service.buscaTodos();
 
         /*
-        O programa acusa um erro de compilação pois exige que se trate a Exception
-        lançada, então usaremos um bloco Try/Catch. Cada vez que o execute() for rodado,
-        teremos o retorno de uma entidade denominada response.
+        Aqui foi inserida a AsyncTask que faz a busca externamente.
 
-        O response mantém um Generics na Call, pois ele irá compor o conteúdo da resposta,
-        seja Body, Header, entre outros. No caso, acessaremos o corpo, que contém nossos
-        produtos, a serem retornados pelo Listener. Dessa forma, eles são enviados ao
-        onPostExecute(), o qual faz o envio para o próximo Listener que estará sendo atualizado
-        na UI thread.
+       O programa acusa um erro de compilação pois exige que se trate a Exception
+       lançada, então usaremos um bloco Try/Catch. Cada vez que o execute() for rodado,
+       teremos o retorno de uma entidade denominada response.
 
-        Estamos usando um Try/Catch, e pode ser que este retorno não chegue, por alguma falha
-        de comunicação ou exceção. Para estes casos, é necessário declarar outro retorno, nulo.
-         */
+       O response mantém um Generics na Call, pois ele irá compor o conteúdo da resposta,
+       seja Body, Header, entre outros. No caso, acessaremos o corpo, que contém nossos
+       produtos, a serem retornados pelo Listener. Dessa forma, eles são enviados ao
+       onPostExecute(), o qual faz o envio para o próximo Listener que estará sendo atualizado
+       na UI thread.
+
+       Estamos usando um Try/Catch, e pode ser que este retorno não chegue, por alguma falha
+       de comunicação ou exceção. Para estes casos, é necessário declarar outro retorno, nulo.
+        */
         new BaseAsyncTask<>(
-                // primeiro listener que sera executado em doInBackground
+                /*
+                 Primeiro listener que sera executado em doInBackground
+                 */
                 () -> {
                     try {
+
+                        Thread.sleep(3000);
                         Response<List<Produto>> resposta = call.execute();
                         List<Produto> produtosNovos = resposta.body();
-                        return produtosNovos;
-                    } catch (IOException e) {
+
+                        /*
+                        Após buscar os produtos na WEB, salva-os na base de dados.
+                        Caso os produtos já existam, atualiza-os.
+                         */
+                        dao.salva(produtosNovos); // Mesmo que não exista produtos internos, a lista de produtos será VAZIA e não NULA
+                    } catch (Exception e) {
                         e.printStackTrace();
                     }
-                    return null;
+
+                    /*
+                    Sempre retorna todos os produtos cadastrados na base de dados.
+                    Mesmo que a conexão com a Internet retorne sucesso, ou não,
+                    sempre buscará os produtos da base de dados.
+                     */
+                    return dao.buscaTodos();
                 },
 
-                // segundo listener que sera executado em onPostExecute
+                /*
+                Segundo listener que sera executado em onPostExecute
+                 */
                 produtosNovos -> {
-                    if (produtosNovos != null) {
-                        adapter.atualiza(produtosNovos);
-                    } else {
-                        Toast.makeText(this, "Não foi possível buscar os produtos da API",
-                                Toast.LENGTH_SHORT).show();
-                    }
-                }).execute();
 
-        /*new BaseAsyncTask<>(dao::buscaTodos,
-                resultado -> adapter.atualiza(resultado))
-                .execute();*/
+                    adapter.atualiza(produtosNovos);
+
+                    /*
+                    O método executeOnExecutor com o valor AsyncTask.THREAD_POOL_EXECUTOR
+                    significa que essa AsyncTask é uma execução fora do padrão e que não entrará na fila.
+                     */
+                }).executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
     }
 
     private void configuraListaProdutos() {
