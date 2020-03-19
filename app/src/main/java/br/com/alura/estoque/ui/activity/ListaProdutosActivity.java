@@ -1,11 +1,14 @@
 package br.com.alura.estoque.ui.activity;
 
 import android.os.Bundle;
+import android.widget.Toast;
 
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.RecyclerView;
+
+import java.util.List;
 
 import br.com.alura.estoque.R;
 import br.com.alura.estoque.asynctask.BaseAsyncTask;
@@ -22,6 +25,7 @@ public class ListaProdutosActivity extends AppCompatActivity {
     private static final String TITULO_APPBAR = "Lista de produtos";
     private ListaProdutosAdapter adapter;
     private ProdutoDAO dao;
+    private ProdutoRepository repository;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -45,7 +49,7 @@ public class ListaProdutosActivity extends AppCompatActivity {
         Ele é conhecido como repositório, ou Repository, em inglês, e lidará com a questão da
         origem dos dados, enviando-a para quem solicitar.
          */
-        ProdutoRepository repository = new ProdutoRepository(dao);
+        repository = new ProdutoRepository(dao);
         repository.buscaProdutos((produtos -> adapter.atualiza(produtos)));
     }
 
@@ -71,16 +75,20 @@ public class ListaProdutosActivity extends AppCompatActivity {
     }
 
     private void abreFormularioSalvaProduto() {
-        new SalvaProdutoDialog(this, this::salva).mostra();
-    }
+        new SalvaProdutoDialog(this,
+                (produtoCriado) -> repository.salva(produtoCriado, new ProdutoRepository.DadosCarregadosCallback<Produto>() {
 
-    private void salva(Produto produto) {
-        new BaseAsyncTask<>(() -> {
-            long id = dao.salva(produto);
-            return dao.buscaProduto(id);
-        }, produtoSalvo ->
-                adapter.adiciona(produtoSalvo))
-                .execute();
+                    @Override
+                    public void quandoSucesso(Produto produto) {
+                        adapter.adiciona(produto);
+                    }
+
+                    @Override
+                    public void quandoFalha(String erro) {
+                        Toast.makeText(ListaProdutosActivity.this, erro, Toast.LENGTH_SHORT).show();
+                    }
+                })
+        ).mostra();
     }
 
     private void abreFormularioEditaProduto(int posicao, Produto produto) {

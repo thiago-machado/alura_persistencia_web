@@ -4,7 +4,9 @@ import java.util.List;
 
 import br.com.alura.estoque.model.Produto;
 import retrofit2.Call;
+import retrofit2.http.Body;
 import retrofit2.http.GET;
+import retrofit2.http.POST;
 
 /*
 Aqui nós inseriremos o código referente à definição das requisições
@@ -26,4 +28,19 @@ public interface ProdutoService {
      */
     @GET("produto")
     Call<List<Produto>> buscaTodos();
+
+    /*
+    Precisamos fazer uma requisição que irá atender ao que nossa API espera,
+    POST, a receber um produto via corpo da requisição, devolvendo um produto
+    com ID esperado, isto é, gerado na API.
+
+    Definiremos o tipo, @POST, que terá o endereço produto. A novidade aqui é
+    entendermos como enviaremos o nosso objeto produto via corpo da requisição.
+
+    Isto será feito via parâmetro, e indicaremos o que ele significa dentro da
+    requisição. Já que ele fará parte do corpo, teremos uma notação @Body e então
+    definiremos o retorno de um único produto, portanto usaremos um Generics.
+     */
+    @POST("produto")
+    Call<Produto> salva(@Body Produto produto);
 }

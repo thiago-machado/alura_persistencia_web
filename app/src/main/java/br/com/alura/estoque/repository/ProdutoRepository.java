@@ -10,7 +10,9 @@ import br.com.alura.estoque.model.Produto;
 import br.com.alura.estoque.retrofit.EstoqueRetrofit;
 import br.com.alura.estoque.retrofit.service.ProdutoService;
 import retrofit2.Call;
+import retrofit2.Callback;
 import retrofit2.Response;
+import retrofit2.internal.EverythingIsNonNull;
 
 /*
 Repositório a ser mantido pela Activity, que pedirá os dados para ele
@@ -31,9 +33,11 @@ public class ProdutoRepository {
     criar um banco de dados.
      */
     private final ProdutoDAO dao;
+    private final ProdutoService service;
 
     public ProdutoRepository(ProdutoDAO dao) {
         this.dao = dao;
+        this.service = new EstoqueRetrofit().getProdutoService();
     }
 
     /*
@@ -43,12 +47,15 @@ public class ProdutoRepository {
     Assim, mantemos uma única instância e, para cada comportamento, colocaremos
     o listener desejado, que teremos que delegar para os comportamentos mais
     internos, como é o caso da busca interna.
+
+    Nosso Listener agora recebe e retorna um tipo Generics, e no caso, estamos
+     definindo que iremos enviar e receber o tipo List<Produto>.
      */
-    public void buscaProdutos(ProdutosCarregadosListener listener) {
+    public void buscaProdutos(DadosCarregadosListener<List<Produto>> listener) {
         buscaProdutosInternos(listener);
     }
 
-    private void buscaProdutosInternos(ProdutosCarregadosListener listener) {
+    private void buscaProdutosInternos(DadosCarregadosListener<List<Produto>> listener) {
 
         /*
         Criando AsyncTask para pegar os produtos salvos internamente.
@@ -64,13 +71,12 @@ public class ProdutoRepository {
         new BaseAsyncTask<>(dao::buscaTodos, // Fazendo a busca internamente e retornando todos os produtos
                 produtos -> {
                     // Atualizando a lista de produtos (que foram pegos internamente logo acima) para visuzalização
-                    //adapter.atualiza(produtos);
                     listener.quandoCarregados(produtos);
                     buscaProdutosNaAPI(listener);
                 }).execute();
     }
 
-    private void buscaProdutosNaAPI(ProdutosCarregadosListener listener) {
+    private void buscaProdutosNaAPI(DadosCarregadosListener<List<Produto>> listener) {
 
         /*
         A implementação será feita com a instância de EstoqueRetrofit(), como
@@ -93,7 +99,6 @@ public class ProdutoRepository {
         assíncrona, ou teremos uma exceção.
 
          */
-        ProdutoService service = new EstoqueRetrofit().getProdutoService();
         Call<List<Produto>> call = service.buscaTodos();
 
         /*
@@ -145,7 +150,6 @@ public class ProdutoRepository {
                  */
                 produtosNovos -> {
 
-                    //adapter.atualiza(produtosNovos);
                     listener.quandoCarregados(produtosNovos);
 
 
@@ -156,6 +160,73 @@ public class ProdutoRepository {
                 }).executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
     }
 
+    public void salva(Produto produto, DadosCarregadosCallback<Produto> callback) {
+        sakvaAPI(produto, callback);
+    }
+
+    private void sakvaAPI(Produto produto, DadosCarregadosCallback<Produto> callback) {
+
+        /*
+        Então, vamos entender como fazer tal implementação para que também não seja necessário nos
+        atentarmos à parte do executeOnExecutor() da Async Task.
+
+        Chamaremos a call e o método enqueue(), que fará a execução de maneira assíncrona,
+        sem precisarmos de uma Async Task. Ele exige uma interface chamada Callback,
+        que sempre receberá o Generics que temos em nossa Call, englobando um produto.
+
+        Então, vamos entender como fazer tal implementação para que também não seja necessário
+        nos atentarmos à parte do executeOnExecutor() da Async Task. Chamaremos a call e o método
+        enqueue(), que fará a execução de maneira assíncrona, sem precisarmos de uma Async Task.
+
+        Ele exige uma interface chamada Callback, que sempre receberá o Generics que temos em
+        nossa Call, englobando um produto.
+
+        Ambos são executados na UI Thread, sendo assim temos o mesmo resultado obtido no
+        onPostExecute(), na interface listener::quandoCarregados.
+        Ou seja, são comportamentos que podemos delegar diretamente à nossa Activity.
+         */
+        Call<Produto> call = service.salva(produto);
+        call.enqueue(new Callback<Produto>() {
+
+            @Override
+            @EverythingIsNonNull // informando que nenhum parâmetro é NULL
+            public void onResponse(Call<Produto> call, Response<Produto> response) {
+
+                /*
+                Já que recebemos o produto, podemos optar por salvar internamente e só depois notificarmos.
+
+                Ele pegará o produtoSalvo proveniente da nossa API, que salvaremos internamente — então,
+                substituiremos produto de dao.salva() do trecho acima por produtoSalvo.
+                Outro detalhe, quando utilizamos o enqueue(), não precisamos chamar o execute() feito
+                na Async Task. Além disso, sua Thread não é própria da Async Task, e sim uma nova Thread,
+                desvinculada, executada em paralelo.
+                 */
+                if(response.isSuccessful()) {
+                    Produto produtoSalvo = response.body();
+                    if(produtoSalvo != null) {
+                        salvaInternamente(produtoSalvo, callback);
+                    }
+                } else {
+                    callback.quandoFalha("Resposta não esperada do servidor");
+                }
+            }
+
+            @Override
+            @EverythingIsNonNull
+            public void onFailure(Call<Produto> call, Throwable t) {
+                callback.quandoFalha("Erro na comunicação. Mensagem: " + t.getMessage());
+            }
+        });
+    }
+
+    private void salvaInternamente(Produto produtoSalvo, DadosCarregadosCallback<Produto> callback) {
+        new BaseAsyncTask<>(() ->
+        {
+            long id = dao.salva(produtoSalvo);
+            return dao.buscaProduto(id);
+        }, produtoPersistido -> callback.quandoSucesso (produtoPersistido)).execute();
+    }
+
     /*
     Utilizaremos a mesma técnica aplicada em Listeners, sendo assim teremos um Listener próprio
     para o repositório.
@@ -164,8 +235,21 @@ public class ProdutoRepository {
     Activity o implementará e fará a atualização.
 
     Receberemos esse listener no momento em que chamamos os nossos produtos, isto é, em buscaProdutos(...).
+
+
+    Dado que queremos justamente flexibilizar o uso do nosso Listener para "n" situações,
+    uma das abordagens que podemos considerar é criar um Listener genérico.
+    Da mesma forma como criamos uma Async Task genérica, implementaremos uma interface
+    genérica que pode receber qualquer tipo (T) e retornar qualquer tipo (T resultado).
+
+    O T vem do Type, que no caso é tipo genérico.
      */
-    public interface ProdutosCarregadosListener {
-        void quandoCarregados(List<Produto> produtos);
+    public interface DadosCarregadosListener<T> {
+        void quandoCarregados(T resultado);
+    }
+
+    public interface DadosCarregadosCallback <T> {
+        void quandoSucesso(T resultado);
+        void quandoFalha(String erro);
     }
 }
