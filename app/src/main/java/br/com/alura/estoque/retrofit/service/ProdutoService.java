@@ -5,8 +5,11 @@ import java.util.List;
 import br.com.alura.estoque.model.Produto;
 import retrofit2.Call;
 import retrofit2.http.Body;
+import retrofit2.http.DELETE;
 import retrofit2.http.GET;
 import retrofit2.http.POST;
+import retrofit2.http.PUT;
+import retrofit2.http.Path;
 
 /*
 Aqui nós inseriremos o código referente à definição das requisições
@@ -43,4 +46,21 @@ public interface ProdutoService {
      */
     @POST("produto")
     Call<Produto> salva(@Body Produto produto);
+
+    /*
+    O método PUT realizará uma alteração no servidor.
+    {id} = define que estaremos enviando uma informação como parâmetro
+    @Path("id") = estamos definindo que "long id" será inserido na URL da requisição, substituindo o {id}
+    pelo ID do desejado.
+    @Body = deine o corpo da requisição
+     */
+    @PUT("produto/{id}")
+    Call<Produto> edita(@Path("id") long id, @Body Produto produto);
+
+    /*
+    Em situações em que fizermos requisições sem retorno no body(), podemos usar como referência o
+    Void, como fazemos na Async Task.
+     */
+    @DELETE("produto/{id}")
+    Call<Void> remove(@Path("id") long id);
 }

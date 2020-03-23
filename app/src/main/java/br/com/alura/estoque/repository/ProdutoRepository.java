@@ -1,13 +1,17 @@
 package br.com.alura.estoque.repository;
 
+import android.content.Context;
 import android.os.AsyncTask;
 
 import java.util.List;
 
 import br.com.alura.estoque.asynctask.BaseAsyncTask;
+import br.com.alura.estoque.database.EstoqueDatabase;
 import br.com.alura.estoque.database.dao.ProdutoDAO;
 import br.com.alura.estoque.model.Produto;
 import br.com.alura.estoque.retrofit.EstoqueRetrofit;
+import br.com.alura.estoque.retrofit.callback.BaseCallback;
+import br.com.alura.estoque.retrofit.callback.CallbackSemRetorno;
 import br.com.alura.estoque.retrofit.service.ProdutoService;
 import retrofit2.Call;
 import retrofit2.Callback;
@@ -35,8 +39,9 @@ public class ProdutoRepository {
     private final ProdutoDAO dao;
     private final ProdutoService service;
 
-    public ProdutoRepository(ProdutoDAO dao) {
-        this.dao = dao;
+    public ProdutoRepository(Context context) {
+        EstoqueDatabase db = EstoqueDatabase.getInstance(context);
+        this.dao = db.getProdutoDAO();
         this.service = new EstoqueRetrofit().getProdutoService();
     }
 
@@ -51,11 +56,11 @@ public class ProdutoRepository {
     Nosso Listener agora recebe e retorna um tipo Generics, e no caso, estamos
      definindo que iremos enviar e receber o tipo List<Produto>.
      */
-    public void buscaProdutos(DadosCarregadosListener<List<Produto>> listener) {
-        buscaProdutosInternos(listener);
+    public void buscaProdutos(DadosCarregadosCallback<List<Produto>> callback) {
+        buscaProdutosInternos(callback);
     }
 
-    private void buscaProdutosInternos(DadosCarregadosListener<List<Produto>> listener) {
+    private void buscaProdutosInternos(DadosCarregadosCallback<List<Produto>> callback) {
 
         /*
         Criando AsyncTask para pegar os produtos salvos internamente.
@@ -71,12 +76,14 @@ public class ProdutoRepository {
         new BaseAsyncTask<>(dao::buscaTodos, // Fazendo a busca internamente e retornando todos os produtos
                 produtos -> {
                     // Atualizando a lista de produtos (que foram pegos internamente logo acima) para visuzalização
-                    listener.quandoCarregados(produtos);
-                    buscaProdutosNaAPI(listener);
+                    callback.quandoSucesso(produtos);
+                    //buscaProdutosNaAPI1(callback);
+                    //buscaProdutosNaAPI2(callback);
+                    buscaProdutosNaAPI3(callback);
                 }).execute();
     }
 
-    private void buscaProdutosNaAPI(DadosCarregadosListener<List<Produto>> listener) {
+    private void buscaProdutosNaAPI1(DadosCarregadosCallback<List<Produto>> callback) {
 
         /*
         A implementação será feita com a instância de EstoqueRetrofit(), como
@@ -118,9 +125,7 @@ public class ProdutoRepository {
        de comunicação ou exceção. Para estes casos, é necessário declarar outro retorno, nulo.
         */
         new BaseAsyncTask<>(
-                /*
-                 Primeiro listener que sera executado em doInBackground
-                 */
+                // Primeiro listener que sera executado em doInBackground
                 () -> {
                     try {
 
@@ -128,43 +133,109 @@ public class ProdutoRepository {
                         Response<List<Produto>> resposta = call.execute();
                         List<Produto> produtosNovos = resposta.body();
 
-                        /*
-                        Após buscar os produtos na WEB, salva-os na base de dados.
-                        Caso os produtos já existam, atualiza-os.
-                         */
+                        // Após buscar os produtos na WEB, salva-os na base de dados. Caso os produtos já existam, atualiza-os.
                         dao.salva(produtosNovos); // Mesmo que não exista produtos internos, a lista de produtos será VAZIA e não NULA
                     } catch (Exception e) {
                         e.printStackTrace();
                     }
 
-                    /*
-                    Sempre retorna todos os produtos cadastrados na base de dados.
-                    Mesmo que a conexão com a Internet retorne sucesso, ou não,
-                    sempre buscará os produtos da base de dados.
-                     */
+                    // Sempre retorna todos os produtos cadastrados na base de dados. Mesmo que a conexão com a Internet retorne
+                    // sucesso, ou não, sempre buscará os produtos da base de dados.
                     return dao.buscaTodos();
                 },
 
-                /*
-                Segundo listener que sera executado em onPostExecute
-                 */
+                // Segundo listener que sera executado em onPostExecute
                 produtosNovos -> {
-
-                    listener.quandoCarregados(produtosNovos);
-
-
-                    /*
-                    O método executeOnExecutor com o valor AsyncTask.THREAD_POOL_EXECUTOR
-                    significa que essa AsyncTask é uma execução fora do padrão e que não entrará na fila.
-                     */
+                    callback.quandoSucesso(produtosNovos); // Vale lembrar que esse callback está sendo implementado em ListaProdutosActivity
+                    // O método executeOnExecutor com o valor AsyncTask.THREAD_POOL_EXECUTOR significa que essa AsyncTask é uma execução fora do padrão e que não entrará na fila.
                 }).executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
     }
 
-    public void salva(Produto produto, DadosCarregadosCallback<Produto> callback) {
-        sakvaAPI(produto, callback);
+    private void buscaProdutosNaAPI2(DadosCarregadosCallback<List<Produto>> callback) {
+
+        Call<List<Produto>> call = service.buscaTodos();
+
+        call.enqueue(new Callback<List<Produto>>() {
+
+            /*
+            É muito importante que todas as vezes em que executamos algo em onResponse()
+            ou onFailure(), a execução acontece na UI Thread.
+             */
+            @Override
+            @EverythingIsNonNull
+            public void onResponse(Call<List<Produto>> call, Response<List<Produto>> response) {
+                if(response.isSuccessful()) {
+                    List<Produto> produtos = response.body();
+                    if(produtos != null) {
+                        atualizaInternamente(produtos, callback);
+                    }
+                } else {
+                    callback.quandoFalha("Resposta não esperada do servidor");
+                }
+            }
+
+            @Override
+            @EverythingIsNonNull
+            public void onFailure(Call<List<Produto>> call, Throwable t) {
+                callback.quandoFalha("Erro na comunicação. Mensagem: " + t.getMessage());
+            }
+        });
     }
 
-    private void sakvaAPI(Produto produto, DadosCarregadosCallback<Produto> callback) {
+    private void buscaProdutosNaAPI3(DadosCarregadosCallback<List<Produto>> callback) {
+
+        Call<List<Produto>> call = service.buscaTodos();
+
+        call.enqueue(new BaseCallback<>(new BaseCallback.RespostaCallback<List<Produto>>() {
+            @Override
+            public void quandoSucesso(List<Produto> produtos) {
+                atualizaInternamente(produtos, callback);
+            }
+
+            @Override
+            public void quandoFalha(String erro) {
+                callback.quandoFalha(erro);
+            }
+        }));
+    }
+
+
+    private void atualizaInternamente(List<Produto> produtos, DadosCarregadosCallback<List<Produto>> callback) {
+        new BaseAsyncTask<>(() ->
+        {
+            dao.salva(produtos);
+            return dao.buscaTodos();
+        },
+            r -> { callback.quandoSucesso(r); } // Vale lembrar que esse callback está sendo implementado em ListaProdutosActivity
+        ).execute();
+    }
+
+    public void salva(Produto produto, DadosCarregadosCallback<Produto> callback) {
+        /*
+        Esse método foi comentado pois estamos usando um Callback genérico agora.
+        Mantive o método anterior devido aos comentários.
+         */
+        //salvaAPI1(produto, callback);
+        salvaAPI2(produto, callback);
+    }
+
+    private void salvaAPI2(Produto produto, DadosCarregadosCallback<Produto> callback) {
+
+        Call<Produto> call = service.salva(produto);
+        call.enqueue(new BaseCallback<>(new BaseCallback.RespostaCallback<Produto>() {
+            @Override
+            public void quandoSucesso(Produto produtoSalvo) {
+                salvaInternamente(produtoSalvo, callback);
+            }
+
+            @Override
+            public void quandoFalha(String erro) {
+                callback.quandoFalha(erro);
+            }
+        }));
+    }
+
+    private void salvaAPI1(Produto produto, DadosCarregadosCallback<Produto> callback) {
 
         /*
         Então, vamos entender como fazer tal implementação para que também não seja necessário nos
@@ -173,13 +244,6 @@ public class ProdutoRepository {
         Chamaremos a call e o método enqueue(), que fará a execução de maneira assíncrona,
         sem precisarmos de uma Async Task. Ele exige uma interface chamada Callback,
         que sempre receberá o Generics que temos em nossa Call, englobando um produto.
-
-        Então, vamos entender como fazer tal implementação para que também não seja necessário
-        nos atentarmos à parte do executeOnExecutor() da Async Task. Chamaremos a call e o método
-        enqueue(), que fará a execução de maneira assíncrona, sem precisarmos de uma Async Task.
-
-        Ele exige uma interface chamada Callback, que sempre receberá o Generics que temos em
-        nossa Call, englobando um produto.
 
         Ambos são executados na UI Thread, sendo assim temos o mesmo resultado obtido no
         onPostExecute(), na interface listener::quandoCarregados.
@@ -244,8 +308,87 @@ public class ProdutoRepository {
 
     O T vem do Type, que no caso é tipo genérico.
      */
-    public interface DadosCarregadosListener<T> {
+    /*public interface DadosCarregadosListener<T> {
         void quandoCarregados(T resultado);
+    }*/
+
+    public void edita(Produto produto, DadosCarregadosCallback<Produto> callback) {
+        editaNaAPI(produto, callback);
+    }
+
+    private void editaNaAPI(Produto produto, DadosCarregadosCallback<Produto> callback) {
+        Call<Produto> call = service.edita(produto.getId(), produto);
+
+        call.enqueue(new BaseCallback<>(new BaseCallback.RespostaCallback<Produto>() {
+            @Override
+            public void quandoSucesso(Produto resultado) {
+                editaInternamente(resultado, callback);
+            }
+
+            @Override
+            public void quandoFalha(String erro) {
+                callback.quandoFalha(erro);
+            }
+        }));
+    }
+
+    private void editaInternamente(Produto produto, DadosCarregadosCallback<Produto> callback) {
+        new BaseAsyncTask<>(() -> {
+            dao.atualiza(produto);
+            return produto;
+        }, produtoEditado ->
+                //adapter.edita(posicao, produtoEditado))
+                callback.quandoSucesso(produtoEditado)
+        ).execute();
+    }
+
+    /*
+    Em situações em que fizermos requisições sem retorno no body(), podemos usar como referência o
+    Void, como fazemos na Async Task.
+     */
+    public void remove(Produto produto, DadosCarregadosCallback<Void> callback) {
+        removeNaAPI(produto, callback);
+    }
+
+    /*
+    Perceber que somente o método remove() utiliza a classe CallbackSemRetorno.
+    Isso ocorre pois o ato de remover um produto não gera nenhum retorno
+    no corpo da resposta de uma requisição.
+
+    E por não gerar umas resposta no corpo da requisição, ficamos impossibilitados de
+    utilizar nosso BaseCallback. Pois quando a requisição ocorre sem problemas,
+    a seguinte validação ocorre:
+    1) response.isSuccessful()?
+    2) o que veio em body é DIFERENTE de null?
+
+    Caso as premissas acima sejam atendidas, o método quandoSucesso() é executado.
+    Caso contrário, nada é feito. Ou seja, como nossa requisição não possui uma
+    resposta, o método quandoSucesso() nunca será chamado.
+
+     */
+    private void removeNaAPI(Produto produto, DadosCarregadosCallback<Void> callback) {
+        Call<Void> call = service.remove(produto.getId());
+        call.enqueue(new CallbackSemRetorno(new CallbackSemRetorno.RespostaCallback() {
+            @Override
+            public void quandoSucesso() {
+                removeInternamente(produto, callback);
+            }
+
+            @Override
+            public void quandoFalha(String erro) {
+                callback.quandoFalha(erro);
+            }
+        }));
+    }
+
+    private void removeInternamente(Produto produto, DadosCarregadosCallback<Void> callback) {
+        new BaseAsyncTask<>(() -> {
+            dao.remove(produto);
+            return null;
+        /*
+        Percebi que quando o retorno é um Void, precisa definir o tipo do retorno dentro dos parênteses
+         */
+        }, (Void v) -> callback.quandoSucesso(v)).execute();
     }
 
     public interface DadosCarregadosCallback <T> {

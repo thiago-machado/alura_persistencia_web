@@ -1,5 +1,7 @@
 package br.com.alura.estoque.retrofit;
 
+import org.jetbrains.annotations.NotNull;
+
 import br.com.alura.estoque.retrofit.service.ProdutoService;
 import okhttp3.OkHttpClient;
 import okhttp3.logging.HttpLoggingInterceptor;
@@ -22,9 +24,32 @@ que realmente faz a execução, a requisição web.
  */
 public class EstoqueRetrofit {
 
+    private static final String URL_BASE = "http://192.168.0.105:8080/";
     private final ProdutoService produtoService;
 
     public EstoqueRetrofit() {
+
+        OkHttpClient client = configuraClient();
+
+        /*
+        Criando uma instância do Retrofit utilizando um endereço URL raiz (Base URL)
+         */
+        Retrofit retrofit = new Retrofit.Builder()
+                .baseUrl(URL_BASE)
+                .client(client) // Logging Interceptor
+                .addConverterFactory(GsonConverterFactory.create())
+                .build();
+
+        /*
+        Para usarmos a instância do nosso serviço ProdutoService, precisamos
+        chamar o método create() do Retrofit, passando nosso serviço como parâmetro.
+        Feito isso, basta deixarmos a instância do nosso serviço disponível para uso.
+         */
+        produtoService = retrofit.create(ProdutoService.class);
+    }
+
+    @NotNull
+    private OkHttpClient configuraClient() {
 
         /*
         Existe uma biblioteca bastante utilizada em verificações para cada chamada que
@@ -48,25 +73,7 @@ public class EstoqueRetrofit {
          */
         HttpLoggingInterceptor logging = new HttpLoggingInterceptor();
         logging.setLevel(HttpLoggingInterceptor.Level.BODY);
-
-        OkHttpClient client = new OkHttpClient.Builder()
-                .addInterceptor(logging).build();
-
-        /*
-        Criando uma instância do Retrofit utilizando um endereço URL raiz (Base URL)
-         */
-        Retrofit retrofit = new Retrofit.Builder()
-                .baseUrl("http://192.168.0.105:8080/")
-                .client(client) // Logging Interceptor
-                .addConverterFactory(GsonConverterFactory.create())
-                .build();
-
-        /*
-        Para usarmos a instância do nosso serviço ProdutoService, precisamos
-        chamar o método create() do Retrofit, passando nosso serviço como parâmetro.
-        Feito isso, basta deixarmos a instância do nosso serviço disponível para uso.
-         */
-        produtoService = retrofit.create(ProdutoService.class);
+        return new OkHttpClient.Builder().addInterceptor(logging).build();
     }
 
     public ProdutoService getProdutoService() {

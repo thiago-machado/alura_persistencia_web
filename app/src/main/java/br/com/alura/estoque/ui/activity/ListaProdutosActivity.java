@@ -24,7 +24,6 @@ public class ListaProdutosActivity extends AppCompatActivity {
 
     private static final String TITULO_APPBAR = "Lista de produtos";
     private ListaProdutosAdapter adapter;
-    private ProdutoDAO dao;
     private ProdutoRepository repository;
 
     @Override
@@ -36,9 +35,6 @@ public class ListaProdutosActivity extends AppCompatActivity {
         configuraListaProdutos();
         configuraFabSalvaProduto();
 
-        EstoqueDatabase db = EstoqueDatabase.getInstance(this);
-        dao = db.getProdutoDAO();
-
         /*
         Identificamos a necessidade de migrar os comportamentos de busca de produtos internos e
         na API para uma classe. Mas qual será a nova classe que manterá estas duas responsabilidades,
@@ -49,24 +45,45 @@ public class ListaProdutosActivity extends AppCompatActivity {
         Ele é conhecido como repositório, ou Repository, em inglês, e lidará com a questão da
         origem dos dados, enviando-a para quem solicitar.
          */
-        repository = new ProdutoRepository(dao);
-        repository.buscaProdutos((produtos -> adapter.atualiza(produtos)));
+        repository = new ProdutoRepository(this);
+        buscaProdutos();
+    }
+
+    private void buscaProdutos() {
+        repository.buscaProdutos(new ProdutoRepository.DadosCarregadosCallback<List<Produto>>() {
+            @Override
+            public void quandoSucesso(List<Produto> resultado) {
+                adapter.atualiza(resultado);
+            }
+
+            @Override
+            public void quandoFalha(String erro) {
+                Toast.makeText(ListaProdutosActivity.this, erro, Toast.LENGTH_SHORT).show();
+            }
+        });
     }
 
     private void configuraListaProdutos() {
         RecyclerView listaProdutos = findViewById(R.id.activity_lista_produtos_lista);
         adapter = new ListaProdutosAdapter(this, this::abreFormularioEditaProduto);
         listaProdutos.setAdapter(adapter);
-        adapter.setOnItemClickRemoveContextMenuListener(this::remove);
+        adapter.setOnItemClickRemoveContextMenuListener((posicao, produtoEscolhido) -> {
+            remove(posicao, produtoEscolhido);
+        });
     }
 
-    private void remove(int posicao,
-                        Produto produtoRemovido) {
-        new BaseAsyncTask<>(() -> {
-            dao.remove(produtoRemovido);
-            return null;
-        }, resultado -> adapter.remove(posicao))
-                .execute();
+    private void remove(int posicao, Produto produtoEscolhido) {
+        repository.remove(produtoEscolhido, new ProdutoRepository.DadosCarregadosCallback<Void>() {
+            @Override
+            public void quandoSucesso(Void resultado) {
+                adapter.remove(posicao);
+            }
+
+            @Override
+            public void quandoFalha(String erro) {
+                Toast.makeText(ListaProdutosActivity.this, erro, Toast.LENGTH_SHORT).show();
+            }
+        });
     }
 
     private void configuraFabSalvaProduto() {
@@ -77,7 +94,6 @@ public class ListaProdutosActivity extends AppCompatActivity {
     private void abreFormularioSalvaProduto() {
         new SalvaProdutoDialog(this,
                 (produtoCriado) -> repository.salva(produtoCriado, new ProdutoRepository.DadosCarregadosCallback<Produto>() {
-
                     @Override
                     public void quandoSucesso(Produto produto) {
                         adapter.adiciona(produto);
@@ -93,18 +109,23 @@ public class ListaProdutosActivity extends AppCompatActivity {
 
     private void abreFormularioEditaProduto(int posicao, Produto produto) {
         new EditaProdutoDialog(this, produto,
-                produtoEditado -> edita(posicao, produtoEditado))
-                .mostra();
+                produtoCriado -> {
+                    edita(posicao, produtoCriado);
+                }).mostra();
     }
 
-    private void edita(int posicao, Produto produto) {
-        new BaseAsyncTask<>(() -> {
-            dao.atualiza(produto);
-            return produto;
-        }, produtoEditado ->
-                adapter.edita(posicao, produtoEditado))
-                .execute();
-    }
+    private void edita(int posicao, Produto produtoCriado) {
+        repository.edita(produtoCriado, new ProdutoRepository.DadosCarregadosCallback<Produto>() {
+            @Override
+            public void quandoSucesso(Produto produtoEditado) {
+                adapter.edita(posicao, produtoEditado);
+            }
 
+            @Override
+            public void quandoFalha(String erro) {
+                Toast.makeText(ListaProdutosActivity.this, erro, Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
 
 }
